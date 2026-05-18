@@ -1,0 +1,17 @@
+{
+  "short_name": "Auto Swap",
+  "name": "Safe Auto Swap",
+  "description": "Fetch Safe balances, select tokens, and batch swap them into a target asset.",
+  "iconPath": "icon.svg",
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#061826",
+  "background_color": "#061826",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "256x256",
+      "type": "image/svg+xml"
+    }
+  ]
+}

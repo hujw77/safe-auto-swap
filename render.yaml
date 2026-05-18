@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: safe-auto-swap
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build:single
+    startCommand: npm run start:single
+    envVars:
+      - key: NODE_VERSION
+        value: 24
+      - key: PORT
+        value: 8787
