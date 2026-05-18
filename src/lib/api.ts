@@ -304,9 +304,15 @@ const encodeExtraData = (extData: Hex, amountOut: bigint): Hex =>
     [extData, amountOut, amountOut]
   )
 
+const applySlippage = (amountOut: bigint, slippageBps: number): bigint => {
+  const normalizedBps = Math.min(10_000, Math.max(0, Math.trunc(slippageBps)))
+  return (amountOut * BigInt(10_000 - normalizedBps)) / 10_000n
+}
+
 const buildHelixboxCalldata = (
   request: QuoteRequest,
-  quoteRecord: Record<string, unknown>
+  quoteRecord: Record<string, unknown>,
+  slippageBps: number
 ): { calldata: Hex; executors: Address[]; extDataCount: number } => {
   const nestedData = coerceObject(quoteRecord.data)
   const payload = nestedData ?? quoteRecord
@@ -316,9 +322,7 @@ const buildHelixboxCalldata = (
     pickFirst(payload, ['amount_out', 'amountOut']) ??
       pickFirst(coerceObject(payload.info) ?? {}, ['amount_out', 'amountOutCalculated', 'amountOut'])
   )
-  const minAmountOut = coerceBigInt(
-    pickFirst(coerceObject(txdata.min_amount_out) ?? {}, ['calculated', 'predicted']) ?? amountOut
-  )
+  const minAmountOut = applySlippage(amountOut, slippageBps)
   const expireSimulate = BigInt(Math.floor(Date.now() / 1000) + 6)
   const extData = encodeExtraData(normalizeHex(txdata.ext_data), amountOut)
 
@@ -453,7 +457,10 @@ export const fetchTokenBalances = async (
     .sort((left, right) => (right.usdValue ?? 0) - (left.usdValue ?? 0))
 }
 
-export const fetchQuote = async (request: QuoteRequest): Promise<QuoteExecution> => {
+export const fetchQuote = async (
+  request: QuoteRequest,
+  slippageBps = 500
+): Promise<QuoteExecution> => {
   const response = await fetchQuoteBatchResponse([{ ...request, id: request.id ?? '0' }])
 
   const quote = coerceArray(response.result)[0]
@@ -472,7 +479,7 @@ export const fetchQuote = async (request: QuoteRequest): Promise<QuoteExecution>
     throw new Error(preview.error)
   }
 
-  const executionData = buildHelixboxCalldata(request, quoteRecord)
+  const executionData = buildHelixboxCalldata(request, quoteRecord, slippageBps)
 
   return {
     routerAddress: HELIXBOX_ROUTER_ADDRESS,
@@ -480,7 +487,7 @@ export const fetchQuote = async (request: QuoteRequest): Promise<QuoteExecution>
     value: 0n,
     allowanceTarget: HELIXBOX_ROUTER_ADDRESS,
     amountOut: preview.amountOut,
-    minAmountOut: preview.minAmountOut,
+    minAmountOut: applySlippage(preview.amountOut, slippageBps),
     executors: executionData.executors,
     extDataCount: executionData.extDataCount
   }
@@ -515,7 +522,8 @@ export const fetchBatchQuotePreviews = async (
 }
 
 export const fetchBatchQuoteExecutions = async (
-  requests: QuoteRequest[]
+  requests: QuoteRequest[],
+  slippageBps = 500
 ): Promise<Record<string, QuoteExecutionResult>> => {
   if (requests.length === 0) {
     return {}
@@ -568,7 +576,7 @@ export const fetchBatchQuoteExecutions = async (
     }
 
     try {
-      const executionData = buildHelixboxCalldata(request, quoteRecord)
+      const executionData = buildHelixboxCalldata(request, quoteRecord, slippageBps)
       results[preview.id] = {
         id: preview.id,
         execution: {
@@ -577,7 +585,7 @@ export const fetchBatchQuoteExecutions = async (
           value: 0n,
           allowanceTarget: HELIXBOX_ROUTER_ADDRESS,
           amountOut: preview.amountOut,
-          minAmountOut: preview.minAmountOut,
+          minAmountOut: applySlippage(preview.amountOut, slippageBps),
           executors: executionData.executors,
           extDataCount: executionData.extDataCount
         }

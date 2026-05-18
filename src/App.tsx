@@ -51,6 +51,7 @@ function App() {
   const [selected, setSelected] = useState<Record<string, boolean>>({})
   const [targetAddress, setTargetAddress] = useState<string>('')
   const [minOutput, setMinOutput] = useState('0')
+  const [slippagePercent, setSlippagePercent] = useState('5')
   const [loading, setLoading] = useState(true)
   const [executing, setExecuting] = useState(false)
   const [quoteSummary, setQuoteSummary] = useState<string>('')
@@ -137,6 +138,15 @@ function App() {
     () => tokens.reduce((sum, token) => sum + (token.usdValue ?? 0), 0),
     [tokens]
   )
+  const slippageBps = useMemo(() => {
+    const parsed = Number.parseFloat(slippagePercent)
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return 0
+    }
+
+    return Math.min(10_000, Math.round(parsed * 100))
+  }, [slippagePercent])
+  const slippageDisplay = useMemo(() => `${(slippageBps / 100).toFixed(2)}%`, [slippageBps])
 
   const refreshTokens = async (options?: { preserveStatus?: boolean }) => {
     if (!safeAddress || !chainId) {
@@ -218,7 +228,7 @@ function App() {
       batchTokens.push(token)
     }
 
-    const executions = await fetchBatchQuoteExecutions(batchRequests)
+    const executions = await fetchBatchQuoteExecutions(batchRequests, slippageBps)
 
     for (const [index, token] of batchTokens.entries()) {
       const result = executions[String(index)]
@@ -296,11 +306,13 @@ function App() {
 
       const result = await sendSafeTransactions(txs)
       const estimatedOutput = plan.reduce((sum, item) => sum + item.execution.amountOut, 0n)
+      const minAcceptedOutput = plan.reduce((sum, item) => sum + item.execution.minAmountOut, 0n)
 
       setQuoteSummary(
         [
           `${embedded ? 'Queued' : 'Prepared'} ${txs.length} sub-transaction(s) for ${plan.length} swap(s).`,
           `Estimated output: ${formatUnits(estimatedOutput, selectedTarget.decimals)} ${selectedTarget.symbol}.`,
+          `Minimum accepted after ${slippageDisplay} slippage: ${formatUnits(minAcceptedOutput, selectedTarget.decimals)} ${selectedTarget.symbol}.`,
           skipped.length > 0 ? `Skipped ${skipped.length} token(s). See details below.` : '',
           result.mode === 'safe' && result.safeTxHash ? `Safe tx hash: ${result.safeTxHash}` : '',
           result.mode === 'local-wallet'
@@ -377,6 +389,7 @@ function App() {
       const previews = await fetchBatchQuotePreviews(batchRequests)
       let readyCount = 0
       let estimatedOutput = 0n
+      let minimumAcceptedOutput = 0n
 
       for (const [index, token] of batchTokens.entries()) {
         const preview = previews[String(index)]
@@ -400,6 +413,7 @@ function App() {
 
         readyCount += 1
         estimatedOutput += preview.amountOut
+        minimumAcceptedOutput += (preview.amountOut * BigInt(10_000 - slippageBps)) / 10_000n
       }
 
       setQuoteSummary(
@@ -407,6 +421,7 @@ function App() {
           `Batch-quoted ${batchRequests.length} token(s) in one Helixbox request.`,
           `${readyCount} token(s) passed the output threshold.`,
           `Estimated output: ${formatUnits(estimatedOutput, selectedTarget.decimals)} ${selectedTarget.symbol}.`,
+          `Minimum accepted after ${slippageDisplay} slippage: ${formatUnits(minimumAcceptedOutput, selectedTarget.decimals)} ${selectedTarget.symbol}.`,
           skipped.length > 0 ? `Skipped ${skipped.length} token(s). See details below.` : ''
         ]
           .filter(Boolean)
@@ -487,6 +502,19 @@ function App() {
               value={minOutput}
               disabled={executing}
               onChange={(event) => setMinOutput(event.target.value)}
+            />
+          </label>
+
+          <label>
+            <span>Slippage (%)</span>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="0.1"
+              value={slippagePercent}
+              disabled={executing}
+              onChange={(event) => setSlippagePercent(event.target.value)}
             />
           </label>
         </div>
