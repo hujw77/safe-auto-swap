@@ -88,6 +88,16 @@ export type QuoteExecution = {
   extDataCount: number
 }
 
+export type QuoteExecutionResult =
+  | {
+      id: string
+      execution: QuoteExecution
+    }
+  | {
+      id: string
+      error: string
+    }
+
 export type SwapPlanItem = {
   token: TokenBalance
   targetToken: TargetTokenConfig

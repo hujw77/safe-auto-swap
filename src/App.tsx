@@ -3,7 +3,11 @@ import { encodeFunctionData, formatUnits, parseUnits } from 'viem'
 import { getChainConfig } from './config/chains'
 import { TokenTable } from './components/TokenTable'
 import { erc20Abi } from './lib/abi'
-import { fetchBatchQuotePreviews, fetchQuote, fetchTokenBalances } from './lib/api'
+import {
+  fetchBatchQuoteExecutions,
+  fetchBatchQuotePreviews,
+  fetchTokenBalances
+} from './lib/api'
 import {
   canUseLocalWallet,
   getSafeContext,
@@ -50,6 +54,7 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [executing, setExecuting] = useState(false)
   const [quoteSummary, setQuoteSummary] = useState<string>('')
+  const [skippedQuotes, setSkippedQuotes] = useState<string[]>([])
   const [appError, setAppError] = useState<AppError | null>(null)
 
   const chainConfig = useMemo(() => (chainId ? getChainConfig(chainId) : null), [chainId])
@@ -144,6 +149,7 @@ function App() {
       const balances = await loadBalances(safeAddress as `0x${string}`, chainId)
       setTokens(balances)
       setQuoteSummary('')
+      setSkippedQuotes([])
     } catch (error) {
       setAppError({
         title: 'Unable to refresh balances',
@@ -185,6 +191,8 @@ function App() {
     const plan: SwapPlanItem[] = []
     const txs: SafeTx[] = []
     const skipped: string[] = []
+    const batchRequests: QuoteRequest[] = []
+    const batchTokens: TokenBalance[] = []
 
     for (const token of selectedTokens) {
       if (token.isNative) {
@@ -196,14 +204,34 @@ function App() {
         skipped.push(`${token.symbol}: already matches the target token`)
         continue
       }
-
-      const quote = await fetchQuote({
+      const id = String(batchRequests.length)
+      batchRequests.push({
+        id,
         chainId,
         tokenIn: token.address,
         tokenOut: selectedTarget.address,
         amount: token.rawBalance,
         sender: safeAddress as `0x${string}`
       })
+      batchTokens.push(token)
+    }
+
+    const executions = await fetchBatchQuoteExecutions(batchRequests)
+
+    for (const [index, token] of batchTokens.entries()) {
+      const result = executions[String(index)]
+
+      if (!result) {
+        skipped.push(`${token.symbol}: quote response missing from batch result`)
+        continue
+      }
+
+      if ('error' in result) {
+        skipped.push(`${token.symbol}: ${result.error}`)
+        continue
+      }
+
+      const quote = result.execution
 
       if (quote.amountOut <= minOutputRaw) {
         skipped.push(
@@ -256,6 +284,7 @@ function App() {
       setExecuting(true)
       setAppError(null)
       setQuoteSummary('Preparing quotes and Safe batch...')
+      setSkippedQuotes([])
 
       const { plan, txs, skipped } = await prepareSwapPlan()
 
@@ -270,7 +299,7 @@ function App() {
         [
           `${embedded ? 'Queued' : 'Prepared'} ${txs.length} sub-transaction(s) for ${plan.length} swap(s).`,
           `Estimated output: ${formatUnits(estimatedOutput, selectedTarget.decimals)} ${selectedTarget.symbol}.`,
-          skipped.length > 0 ? `Skipped ${skipped.length} token(s): ${skipped.join(' | ')}` : '',
+          skipped.length > 0 ? `Skipped ${skipped.length} token(s). See details below.` : '',
           result.mode === 'safe' && result.safeTxHash ? `Safe tx hash: ${result.safeTxHash}` : '',
           result.mode === 'local-wallet'
             ? `Sent ${result.txHashes.length} local transaction(s): ${result.txHashes.join(' | ')}`
@@ -282,6 +311,7 @@ function App() {
           .filter(Boolean)
           .join(' ')
       )
+      setSkippedQuotes(skipped)
 
       await refreshTokens()
     } catch (error) {
@@ -302,6 +332,7 @@ function App() {
     try {
       setExecuting(true)
       setAppError(null)
+      setSkippedQuotes([])
       if (!safeAddress || !chainId) {
         throw new Error('Missing Safe context or target token.')
       }
@@ -337,6 +368,7 @@ function App() {
 
       if (batchRequests.length === 0) {
         setQuoteSummary(skipped.join(' | ') || 'No swaps can be executed with the current selection.')
+        setSkippedQuotes(skipped)
         return
       }
 
@@ -373,11 +405,12 @@ function App() {
           `Batch-quoted ${batchRequests.length} token(s) in one Helixbox request.`,
           `${readyCount} token(s) passed the output threshold.`,
           `Estimated output: ${formatUnits(estimatedOutput, selectedTarget.decimals)} ${selectedTarget.symbol}.`,
-          skipped.length > 0 ? `Skipped: ${skipped.join(' | ')}` : ''
+          skipped.length > 0 ? `Skipped ${skipped.length} token(s). See details below.` : ''
         ]
           .filter(Boolean)
           .join(' ')
       )
+      setSkippedQuotes(skipped)
     } catch (error) {
       setAppError({
         title: 'Quote preview failed',
@@ -493,6 +526,22 @@ function App() {
       {quoteSummary ? (
         <section className="panel summary">
           <p>{quoteSummary}</p>
+        </section>
+      ) : null}
+
+      {skippedQuotes.length > 0 ? (
+        <section className="panel summary">
+          <div className="summary-header">
+            <strong>Skipped Quotes</strong>
+            <span>{skippedQuotes.length} item(s)</span>
+          </div>
+          <div className="skipped-list">
+            {skippedQuotes.map((item) => (
+              <p key={item} className="skipped-item">
+                {item}
+              </p>
+            ))}
+          </div>
         </section>
       ) : null}
 

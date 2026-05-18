@@ -5,6 +5,7 @@ import type {
   HelixboxSingleExecutor,
   HelixboxSplitExecutor,
   QuoteExecution,
+  QuoteExecutionResult,
   QuotePreview,
   QuoteRequest,
   TokenBalance
@@ -172,6 +173,29 @@ const buildQuotePayload = (requests: QuoteRequest[]) => ({
   has_detail: true,
   split_threshold: 0
 })
+
+const fetchQuoteBatchResponse = async (requests: QuoteRequest[]): Promise<Record<string, unknown>> => {
+  const payload = buildQuotePayload(requests)
+
+  return apiBaseUrl
+    ? fetchJson<Record<string, unknown>>(apiUrl('/api/quote'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      })
+    : fetchJson<Record<string, unknown>>(
+        `${sorRouterBaseUrl}/api/chain/${requests[0].chainId}/quotesV2`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        }
+      )
+}
 
 const parseQuotePreview = (quoteRecord: Record<string, unknown>): QuotePreview | null => {
   const nestedData = coerceObject(quoteRecord.data)
@@ -430,25 +454,7 @@ export const fetchTokenBalances = async (
 }
 
 export const fetchQuote = async (request: QuoteRequest): Promise<QuoteExecution> => {
-  const payload = buildQuotePayload([{ ...request, id: request.id ?? '0' }])
-  const response = apiBaseUrl
-    ? await fetchJson<Record<string, unknown>>(apiUrl('/api/quote'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      })
-    : await fetchJson<Record<string, unknown>>(
-        `${sorRouterBaseUrl}/api/chain/${request.chainId}/quotesV2`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(payload)
-        }
-      )
+  const response = await fetchQuoteBatchResponse([{ ...request, id: request.id ?? '0' }])
 
   const quote = coerceArray(response.result)[0]
   const quoteRecord = coerceObject(quote)
@@ -487,25 +493,7 @@ export const fetchBatchQuotePreviews = async (
     return {}
   }
 
-  const payload = buildQuotePayload(requests)
-  const response = apiBaseUrl
-    ? await fetchJson<Record<string, unknown>>(apiUrl('/api/quote'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      })
-    : await fetchJson<Record<string, unknown>>(
-        `${sorRouterBaseUrl}/api/chain/${requests[0].chainId}/quotesV2`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(payload)
-        }
-      )
+  const response = await fetchQuoteBatchResponse(requests)
 
   const candidates = Array.isArray(response.result)
     ? response.result
@@ -524,4 +512,83 @@ export const fetchBatchQuotePreviews = async (
   }
 
   return previews
+}
+
+export const fetchBatchQuoteExecutions = async (
+  requests: QuoteRequest[]
+): Promise<Record<string, QuoteExecutionResult>> => {
+  if (requests.length === 0) {
+    return {}
+  }
+
+  const response = await fetchQuoteBatchResponse(requests)
+  const candidates = Array.isArray(response.result)
+    ? response.result
+    : Array.isArray(response.data)
+      ? response.data
+      : []
+  const requestById = new Map(requests.map((request, index) => [request.id ?? String(index), request]))
+  const results: Record<string, QuoteExecutionResult> = {}
+
+  for (const candidate of candidates) {
+    const quoteRecord = coerceObject(candidate)
+    if (!quoteRecord) {
+      continue
+    }
+
+    const preview = parseQuotePreview(quoteRecord)
+    if (!preview) {
+      continue
+    }
+
+    if (preview.error) {
+      results[preview.id] = {
+        id: preview.id,
+        error: preview.error
+      }
+      continue
+    }
+
+    const quoteData = coerceObject(quoteRecord.data)
+    if (!quoteData) {
+      results[preview.id] = {
+        id: preview.id,
+        error: 'quote response has no data'
+      }
+      continue
+    }
+
+    const request = requestById.get(preview.id)
+    if (!request) {
+      results[preview.id] = {
+        id: preview.id,
+        error: 'quote response id does not match any request'
+      }
+      continue
+    }
+
+    try {
+      const executionData = buildHelixboxCalldata(request, quoteRecord)
+      results[preview.id] = {
+        id: preview.id,
+        execution: {
+          routerAddress: HELIXBOX_ROUTER_ADDRESS,
+          calldata: executionData.calldata,
+          value: 0n,
+          allowanceTarget: HELIXBOX_ROUTER_ADDRESS,
+          amountOut: preview.amountOut,
+          minAmountOut: preview.minAmountOut,
+          executors: executionData.executors,
+          extDataCount: executionData.extDataCount
+        }
+      }
+    } catch (error) {
+      results[preview.id] = {
+        id: preview.id,
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+  }
+
+  return results
 }
