@@ -1,4 +1,7 @@
+import { getAddress } from 'viem'
 import type { ChainConfig } from '../types'
+
+const addr = (value: string) => getAddress(value)
 
 export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
   1: {
@@ -9,12 +12,12 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
     targets: [
       {
         symbol: 'WETH',
-        address: '0xC02aaA39b223FE8D0A0E5C4F27eAD9083C756Cc2',
+        address: addr('0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'),
         decimals: 18
       },
       {
         symbol: 'USDC',
-        address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+        address: addr('0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'),
         decimals: 6
       }
     ]
@@ -27,12 +30,12 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
     targets: [
       {
         symbol: 'WETH',
-        address: '0x4200000000000000000000000000000000000006',
+        address: addr('0x4200000000000000000000000000000000000006'),
         decimals: 18
       },
       {
         symbol: 'USDC',
-        address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
+        address: addr('0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85'),
         decimals: 6
       }
     ]
@@ -45,12 +48,12 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
     targets: [
       {
         symbol: 'USDC',
-        address: '0xddafbb505ad214d7b80b1f830fccc89b60fb7a83',
+        address: addr('0xddafbb505ad214d7b80b1f830fccc89b60fb7a83'),
         decimals: 6
       },
       {
         symbol: 'WETH',
-        address: '0x6A023CCD1ff6F2045C3309768eAd9E68F978f6e1',
+        address: addr('0x6A023CCD1ff6F2045C3309768eAd9E68F978f6e1'),
         decimals: 18
       }
     ]
@@ -63,12 +66,12 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
     targets: [
       {
         symbol: 'USDC',
-        address: '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359',
+        address: addr('0x3c499c542cef5e3811e1192ce70d8cc03d5c3359'),
         decimals: 6
       },
       {
         symbol: 'WETH',
-        address: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619',
+        address: addr('0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619'),
         decimals: 18
       }
     ]
@@ -81,12 +84,12 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
     targets: [
       {
         symbol: 'WETH',
-        address: '0x82aF49447D8a07e3bd95BD0d56f35241523fBab1',
+        address: addr('0x82aF49447D8a07e3bd95BD0d56f35241523fBab1'),
         decimals: 18
       },
       {
         symbol: 'USDC',
-        address: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831',
+        address: addr('0xaf88d065e77c8cC2239327C5EDb3A432268e5831'),
         decimals: 6
       }
     ]
@@ -99,12 +102,12 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
     targets: [
       {
         symbol: 'USDC',
-        address: '0x833589fCD6EDB6E08f4c7C32D4f71b54bDa02913',
+        address: addr('0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'),
         decimals: 6
       },
       {
         symbol: 'WETH',
-        address: '0x4200000000000000000000000000000000000006',
+        address: addr('0x4200000000000000000000000000000000000006'),
         decimals: 18
       }
     ]

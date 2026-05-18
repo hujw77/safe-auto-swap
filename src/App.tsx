@@ -3,8 +3,14 @@ import { encodeFunctionData, formatUnits, parseUnits } from 'viem'
 import { getChainConfig } from './config/chains'
 import { TokenTable } from './components/TokenTable'
 import { erc20Abi } from './lib/abi'
-import { fetchQuote, fetchTokenBalances } from './lib/api'
-import { getSafeContext, getSafePublicClient, sendSafeTransactions } from './lib/safe'
+import { fetchBatchQuotePreviews, fetchQuote, fetchTokenBalances } from './lib/api'
+import {
+  canUseLocalWallet,
+  getSafeContext,
+  getSafePublicClient,
+  isLocalWalletSendEnabled,
+  sendSafeTransactions
+} from './lib/safe'
 import { hydrateTokenBalances } from './lib/token-metadata'
 import {
   formatCurrency,
@@ -13,7 +19,14 @@ import {
   shortenAddress,
   toErrorMessage
 } from './lib/utils'
-import type { AppError, SafeTx, SwapPlanItem, TargetTokenConfig, TokenBalance } from './types'
+import type {
+  AppError,
+  QuoteRequest,
+  SafeTx,
+  SwapPlanItem,
+  TargetTokenConfig,
+  TokenBalance
+} from './types'
 
 const buildApprovalTx = (tokenAddress: TokenBalance['address'], spender: TokenBalance['address'], amount: bigint) =>
   ({
@@ -41,6 +54,8 @@ function App() {
 
   const chainConfig = useMemo(() => (chainId ? getChainConfig(chainId) : null), [chainId])
   const targetOptions = chainConfig?.targets ?? []
+  const localWalletAvailable = useMemo(() => canUseLocalWallet(), [])
+  const localWalletSendEnabled = useMemo(() => isLocalWalletSendEnabled(), [])
 
   const loadBalances = async (address: `0x${string}`, nextChainId: number) => {
     const balances = await fetchTokenBalances(address, nextChainId)
@@ -253,10 +268,16 @@ function App() {
 
       setQuoteSummary(
         [
-          `Queued ${txs.length} Safe sub-transactions for ${plan.length} swaps.`,
+          `${embedded ? 'Queued' : 'Prepared'} ${txs.length} sub-transaction(s) for ${plan.length} swap(s).`,
           `Estimated output: ${formatUnits(estimatedOutput, selectedTarget.decimals)} ${selectedTarget.symbol}.`,
           skipped.length > 0 ? `Skipped ${skipped.length} token(s): ${skipped.join(' | ')}` : '',
-          result.safeTxHash ? `Safe tx hash: ${result.safeTxHash}` : ''
+          result.mode === 'safe' && result.safeTxHash ? `Safe tx hash: ${result.safeTxHash}` : '',
+          result.mode === 'local-wallet'
+            ? `Sent ${result.txHashes.length} local transaction(s): ${result.txHashes.join(' | ')}`
+            : '',
+          result.mode === 'local-dry-run'
+            ? `Local dry-run only. Broadcasting is disabled outside Safe unless VITE_LOCAL_WALLET_SEND=true.`
+            : ''
         ]
           .filter(Boolean)
           .join(' ')
@@ -281,20 +302,76 @@ function App() {
     try {
       setExecuting(true)
       setAppError(null)
-      const { plan, txs, skipped } = await prepareSwapPlan()
+      if (!safeAddress || !chainId) {
+        throw new Error('Missing Safe context or target token.')
+      }
 
-      if (plan.length === 0) {
+      const minOutputRaw =
+        minOutput.trim().length === 0 ? 0n : parseUnits(minOutput, selectedTarget.decimals)
+      const skipped: string[] = []
+      const batchRequests: QuoteRequest[] = []
+      const batchTokens: TokenBalance[] = []
+
+      for (const token of selectedTokens) {
+        if (token.isNative) {
+          skipped.push(`${token.symbol}: native token routing is not enabled in this build`)
+          continue
+        }
+
+        if (lowerCaseEqual(token.address, selectedTarget.address)) {
+          skipped.push(`${token.symbol}: already matches the target token`)
+          continue
+        }
+
+        const id: string = String(batchRequests.length)
+        batchRequests.push({
+          id,
+          chainId,
+          tokenIn: token.address,
+          tokenOut: selectedTarget.address,
+          amount: token.rawBalance,
+          sender: safeAddress as `0x${string}`
+        })
+        batchTokens.push(token)
+      }
+
+      if (batchRequests.length === 0) {
         setQuoteSummary(skipped.join(' | ') || 'No swaps can be executed with the current selection.')
         return
       }
 
-      const estimatedOutput = plan.reduce((sum, item) => sum + item.execution.amountOut, 0n)
-      const approvals = plan.filter((item) => item.requiresApproval).length
+      const previews = await fetchBatchQuotePreviews(batchRequests)
+      let readyCount = 0
+      let estimatedOutput = 0n
+
+      for (const [index, token] of batchTokens.entries()) {
+        const preview = previews[String(index)]
+
+        if (!preview) {
+          skipped.push(`${token.symbol}: quote response missing from batch result`)
+          continue
+        }
+
+        if (preview.error) {
+          skipped.push(`${token.symbol}: ${preview.error}`)
+          continue
+        }
+
+        if (preview.amountOut <= minOutputRaw) {
+          skipped.push(
+            `${token.symbol}: output ${formatUnits(preview.amountOut, selectedTarget.decimals)} ${selectedTarget.symbol} is below threshold`
+          )
+          continue
+        }
+
+        readyCount += 1
+        estimatedOutput += preview.amountOut
+      }
 
       setQuoteSummary(
         [
-          `${plan.length} token(s) are ready for swap with ${txs.length} Safe sub-transactions.`,
-          `${approvals} token(s) require approval.`,
+          `Batch-quoted ${batchRequests.length} token(s) in one Helixbox request.`,
+          `${readyCount} token(s) passed the output threshold.`,
           `Estimated output: ${formatUnits(estimatedOutput, selectedTarget.decimals)} ${selectedTarget.symbol}.`,
           skipped.length > 0 ? `Skipped: ${skipped.join(' | ')}` : ''
         ]
@@ -338,7 +415,13 @@ function App() {
           </div>
           <div>
             <span>Mode</span>
-            <strong>{embedded ? 'Safe App' : 'Fallback preview'}</strong>
+            <strong>
+              {embedded
+                ? 'Safe App'
+                : localWalletSendEnabled && localWalletAvailable
+                  ? 'Local wallet send'
+                  : 'Local dry-run'}
+            </strong>
           </div>
         </div>
       </section>
@@ -386,10 +469,16 @@ function App() {
           </button>
           <button
             className="button"
-            disabled={loading || executing || selectedTokens.length === 0 || !embedded}
+            disabled={loading || executing || selectedTokens.length === 0}
             onClick={executeSwap}
           >
-            {executing ? 'Preparing batch...' : 'Send Safe batch'}
+            {executing
+              ? 'Preparing batch...'
+              : embedded
+                ? 'Send Safe batch'
+                : localWalletSendEnabled && localWalletAvailable
+                  ? 'Send local transactions'
+                  : 'Dry-run batch'}
           </button>
         </div>
       </section>
@@ -404,6 +493,16 @@ function App() {
       {quoteSummary ? (
         <section className="panel summary">
           <p>{quoteSummary}</p>
+        </section>
+      ) : null}
+
+      {!embedded ? (
+        <section className="panel summary">
+          <p>
+            Local debug mode is active. Set `VITE_SAFE_ADDRESS` and `VITE_CHAIN_ID` to load a
+            wallet outside Safe. To broadcast local test transactions through an injected wallet,
+            also set `VITE_LOCAL_WALLET_SEND=true`.
+          </p>
         </section>
       ) : null}
 

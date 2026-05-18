@@ -6,10 +6,12 @@ import { getChainConfig } from '../config/chains'
 import type { SafeContext, SafeTx } from '../types'
 
 const sdk = new SafeAppsSDK()
+const SAFE_CONTEXT_TIMEOUT_MS = 1200
 
 let publicClientPromise: Promise<PublicClient> | null = null
 let safeContextPromise: Promise<SafeContext> | null = null
 let embeddedSafeInfo: SafeInfo | null = null
+const localWalletSendEnabled = import.meta.env.VITE_LOCAL_WALLET_SEND === 'true'
 
 const createFallbackContext = (): SafeContext => {
   const safeAddress = import.meta.env.VITE_SAFE_ADDRESS
@@ -26,26 +28,53 @@ const createFallbackContext = (): SafeContext => {
   }
 }
 
+const isRunningInsideIframe = (): boolean =>
+  typeof window !== 'undefined' && window.parent !== window
+
+const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+  let timeoutId: number | undefined
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = window.setTimeout(() => {
+      reject(new Error(`Safe context request timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+  })
+
+  try {
+    return await Promise.race([promise, timeoutPromise])
+  } finally {
+    if (timeoutId !== undefined) {
+      window.clearTimeout(timeoutId)
+    }
+  }
+}
+
 export const getSafeContext = async (): Promise<SafeContext> => {
   if (!safeContextPromise) {
-    safeContextPromise = sdk.safe
-      .getInfo()
-      .then((info) => {
-        embeddedSafeInfo = info
+    safeContextPromise = (!isRunningInsideIframe()
+      ? Promise.resolve(createFallbackContext())
+      : withTimeout(sdk.safe.getInfo(), SAFE_CONTEXT_TIMEOUT_MS)
+          .then((info) => {
+            embeddedSafeInfo = info
 
-        return {
-          safeAddress: getAddress(info.safeAddress),
-          chainId: Number(info.chainId),
-          isEmbedded: true
-        }
-      })
-      .catch(() => createFallbackContext())
+            return {
+              safeAddress: getAddress(info.safeAddress),
+              chainId: Number(info.chainId),
+              isEmbedded: true
+            }
+          })
+          .catch(() => createFallbackContext()))
   }
 
   return safeContextPromise
 }
 
 export const preloadSafeContext = (): Promise<SafeContext> => getSafeContext()
+
+export const canUseLocalWallet = (): boolean =>
+  typeof window !== 'undefined' && Boolean(window.ethereum)
+
+export const isLocalWalletSendEnabled = (): boolean => localWalletSendEnabled
 
 export const getSafePublicClient = async (): Promise<PublicClient> => {
   if (!publicClientPromise) {
@@ -93,8 +122,43 @@ export const sendSafeTransactions = async (txs: SafeTx[]) => {
   const context = await getSafeContext()
 
   if (!context.isEmbedded) {
-    throw new Error('Transaction sending is only available inside Safe Wallet.')
+    if (localWalletSendEnabled && window.ethereum) {
+      await window.ethereum.request({
+        method: 'eth_requestAccounts'
+      })
+
+      const txHashes: string[] = []
+
+      for (const tx of txs) {
+        const txRequest = {
+          to: tx.to,
+          data: tx.data,
+          value: tx.value.startsWith('0x') ? tx.value : `0x${BigInt(tx.value).toString(16)}`
+        }
+        const txHash = (await window.ethereum.request({
+          method: 'eth_sendTransaction',
+          params: [txRequest] as unknown as never
+        })) as string
+
+        txHashes.push(txHash)
+      }
+
+      return {
+        mode: 'local-wallet' as const,
+        txHashes
+      }
+    }
+
+    return {
+      mode: 'local-dry-run' as const,
+      txs
+    }
   }
 
-  return sdk.txs.send({ txs })
+  const result = await sdk.txs.send({ txs })
+
+  return {
+    mode: 'safe' as const,
+    safeTxHash: result.safeTxHash
+  }
 }

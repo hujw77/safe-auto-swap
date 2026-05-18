@@ -42,11 +42,39 @@ export type SafeTx = {
 }
 
 export type QuoteRequest = {
+  id?: string
   chainId: number
   tokenIn: Address
   tokenOut: Address
   amount: bigint
   sender: Address
+}
+
+export type QuotePreview = {
+  id: string
+  amountOut: bigint
+  minAmountOut: bigint
+  error?: string
+}
+
+export type HelixboxPathNode = {
+  token: Address
+  data: Hex
+}
+
+export type HelixboxSingleExecutor = {
+  addr: Address
+  acceptor: Address
+  path: HelixboxPathNode[]
+}
+
+export type HelixboxSplitExecutor = {
+  addr: Address
+  tokenIn: Address
+  tokenOut: Address
+  weight: bigint
+  weightOut: bigint
+  data: Hex
 }
 
 export type QuoteExecution = {

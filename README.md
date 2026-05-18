@@ -51,6 +51,12 @@ npm run dev
 
 If you want to temporarily test a pure-frontend flow, set the `VITE_OKX_*` variables above. In that mode the browser signs OKX requests directly and quote requests go straight to `VITE_SOR_ROUTER_BASE_URL` when `VITE_API_BASE_URL` is empty.
 
+For local browser debugging outside Safe:
+
+- set `VITE_SAFE_ADDRESS`
+- set `VITE_CHAIN_ID`
+- optionally set `VITE_LOCAL_WALLET_SEND=true` to send transactions through an injected wallet instead of using dry-run mode
+
 When testing as a custom Safe App in [app.safe.global](https://app.safe.global), open `https://localhost:5173` in a separate tab once and trust the local certificate first. Safe's docs require the app URL and Safe interface to use the same protocol, and `manifest.json` must be served with CORS headers.
 
 ## Single-service deployment
