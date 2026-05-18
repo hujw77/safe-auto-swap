@@ -34,13 +34,6 @@ jobs:
         run: npm run build
         env:
           VITE_BASE_PATH: /${{ github.event.repository.name }}/
-          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
-          VITE_SOR_ROUTER_BASE_URL: ${{ vars.VITE_SOR_ROUTER_BASE_URL }}
-          VITE_OKX_BASE_URL: ${{ vars.VITE_OKX_BASE_URL }}
-          VITE_OKX_ACCESS_KEY: ${{ vars.VITE_OKX_ACCESS_KEY }}
-          VITE_OKX_SECRET_KEY: ${{ vars.VITE_OKX_SECRET_KEY }}
-          VITE_OKX_ACCESS_PASSPHRASE: ${{ vars.VITE_OKX_ACCESS_PASSPHRASE }}
-          VITE_OKX_ACCESS_PROJECT: ${{ vars.VITE_OKX_ACCESS_PROJECT }}
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

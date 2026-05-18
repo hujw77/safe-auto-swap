@@ -94,23 +94,20 @@ The frontend can be deployed to GitHub Pages. For your current frontend-direct t
 1. Push this repo to GitHub.
 2. In the GitHub repo, go to `Settings -> Pages`.
 3. Set `Source` to `GitHub Actions`.
-4. In `Settings -> Secrets and variables -> Actions -> Variables`, create:
+4. Edit [.env.production](/Volumes/Samsung/rust/solver/okx/auto-swap/.env.production) in the repo and fill:
 
-- `VITE_API_BASE_URL`
-- `VITE_SOR_ROUTER_BASE_URL`
-- `VITE_OKX_BASE_URL`
 - `VITE_OKX_ACCESS_KEY`
 - `VITE_OKX_SECRET_KEY`
 - `VITE_OKX_ACCESS_PASSPHRASE`
 - `VITE_OKX_ACCESS_PROJECT`
 
-For pure frontend testing, use:
+Leave these defaults unless you need different endpoints:
 
-- `VITE_API_BASE_URL` = empty
-- `VITE_SOR_ROUTER_BASE_URL` = `https://sor-router.helixbox.ai`
-- `VITE_OKX_BASE_URL` = `https://web3.okx.com`
+- `VITE_API_BASE_URL=`
+- `VITE_SOR_ROUTER_BASE_URL=https://sor-router.helixbox.ai`
+- `VITE_OKX_BASE_URL=https://web3.okx.com`
 
-5. Push to `main` or manually run the `Deploy GitHub Pages` workflow.
+5. Commit and push to `main`.
 6. After deployment, the app URL will be:
 
 - `https://<github-username>.github.io/<repo-name>/`
@@ -125,7 +122,7 @@ The included workflow automatically sets:
 
 - `VITE_BASE_PATH=/<repo-name>/`
 
-and passes through all GitHub Actions variables above during build.
+and loads the rest of the production config from the tracked `.env.production` file.
 
 ### Notes
 
@@ -142,6 +139,14 @@ What still needs a backend elsewhere:
 - optionally `/api/quote` if you want to avoid browser-to-upstream CORS dependency
 
 If you later switch back to the safer architecture, keep `VITE_API_BASE_URL=https://<your-backend-domain>` and remove the `VITE_OKX_*` frontend variables.
+
+### One-step deploy
+
+After `.env.production` is filled once and committed, future deployments are just:
+
+```bash
+git push origin main
+```
 
 ## Current assumptions
 
