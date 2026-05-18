@@ -138,7 +138,7 @@ function App() {
     [tokens]
   )
 
-  const refreshTokens = async () => {
+  const refreshTokens = async (options?: { preserveStatus?: boolean }) => {
     if (!safeAddress || !chainId) {
       return
     }
@@ -148,8 +148,10 @@ function App() {
       setAppError(null)
       const balances = await loadBalances(safeAddress as `0x${string}`, chainId)
       setTokens(balances)
-      setQuoteSummary('')
-      setSkippedQuotes([])
+      if (!options?.preserveStatus) {
+        setQuoteSummary('')
+        setSkippedQuotes([])
+      }
     } catch (error) {
       setAppError({
         title: 'Unable to refresh balances',
@@ -313,7 +315,7 @@ function App() {
       )
       setSkippedQuotes(skipped)
 
-      await refreshTokens()
+      await refreshTokens({ preserveStatus: true })
     } catch (error) {
       setAppError({
         title: 'Swap batch failed',
@@ -490,7 +492,13 @@ function App() {
         </div>
 
         <div className="controls-actions">
-          <button className="button button-secondary" disabled={loading || executing} onClick={refreshTokens}>
+          <button
+            className="button button-secondary"
+            disabled={loading || executing}
+            onClick={() => {
+              void refreshTokens()
+            }}
+          >
             Refresh balances
           </button>
           <button
