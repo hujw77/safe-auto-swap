@@ -40,6 +40,24 @@ export const CHAIN_CONFIGS: Record<number, ChainConfig> = {
       }
     ]
   },
+  56: {
+    chainId: 56,
+    name: 'BSC',
+    nativeSymbol: 'BNB',
+    defaultTargetSymbol: 'USDC',
+    targets: [
+      {
+        symbol: 'USDC',
+        address: addr('0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d'),
+        decimals: 18
+      },
+      {
+        symbol: 'WBNB',
+        address: addr('0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c'),
+        decimals: 18
+      }
+    ]
+  },
   100: {
     chainId: 100,
     name: 'Gnosis',
